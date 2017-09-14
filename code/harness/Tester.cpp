@@ -472,6 +472,15 @@ int Tester::test_check_random_permutations(const int num_rounds) {
       break;
     }
 
+    // Nuke the snapshot, we don't need it anymore.
+    int nuke_fd = open(SNAPSHOT_PATH, O_RDONLY);
+    int nuke_res = ioctl(nuke_fd, COW_BRD_WIPE);
+    if (nuke_res < 0) {
+      cerr << "Error nuking snapshot file system" << endl;
+      return -1;
+    }
+    close(nuke_fd);
+
     SingleTestInfo test_info;
 
     //cout << '.' << std::flush;

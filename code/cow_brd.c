@@ -491,10 +491,8 @@ static int brd_ioctl(struct block_device *bdev, fmode_t mode,
       brd_free_pages(brd);
       break;
     case COW_BRD_WIPE:
-      if (brd->is_snapshot) {
-        return -ENOTTY;
-      }
-      // Assumes no snapshots are being used right now.
+      // Assumes whatever is being wiped is not being used by anything,
+      // including being the base for other snapshots.
       brd_free_pages(brd);
       break;
     default:
