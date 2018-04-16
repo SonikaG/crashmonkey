@@ -107,6 +107,91 @@ int WriteData(int fd, unsigned int offset, unsigned int size) {
   return 0;
 }
 
+//method to read in and verify known data
+int ReadData(int fd, unsigned int offset, unsigned int size) {
+  //constant buffer to read in the data
+  char *read_buf = new char[size];
+  // Offset into a data block to start working at.
+  const unsigned int rounded_offset =
+    (offset + (kTestDataSize - 1)) & (~(kTestDataSize - 1));
+  // Round down size to 4k for number of full pages to write.
+  const unsigned int aligned_size =
+    (size - (rounded_offset - offset)) & ~(kTestDataSize - 1);
+  unsigned int num_read = 0;
+  // The start of the write range is not aligned with our data blocks.
+  // Therefore, we should write out part of a data block for this segment,
+  // with the first character in the data block aligning with the data block
+  // boundary.
+  if (rounded_offset != offset) {
+    // We should never write more than kTestDataSize of unaligned data at the
+    // start.
+    do {
+      const unsigned int mod_offset =
+        num_read + (offset & (kTestDataSize - 1));
+      assert(mod_offset < kTestDataSize);
+      //Read one character at a time to verify
+      int res = pread(fd, read_buf, 1 , offset + num_read);
+      //something wrong with the file, could not be read 
+      if (res < 0) {
+        return errno;
+      }
+      //is it the right character?
+      if (read_buf[num_read] != *(kTestDataBlock + mod_offset)){
+        return errno;
+      }
+      num_read += res;
+    } while (offset + num_read < rounded_offset);
+  }
+
+  // Write out the required number of full pages for this request. The first
+  // byte will be aligned with kTestDataSize.
+  unsigned int aligned_read = 0;
+  do {
+    const unsigned int mod_offset = (aligned_read & (kTestDataSize - 1));
+    
+    //Read one character at a time to verify
+    int res = pread(fd, read_buf, 1 , offset + num_read);
+    //something wrong with the file, could not be read 
+    if (res < 0) {
+      return errno;
+    }
+    //is it the right character?
+    if (read_buf[num_read] != *(kTestDataBlock + mod_offset)){
+      return errno;
+    }
+    num_read += res;
+
+    aligned_read += res;
+  } while (aligned_read < aligned_size);
+
+  if (num_read == size) {
+    return 0;
+  }
+
+  // Write out the last partial page of data. The first byte will be aligned
+  // with kTestDataSize.
+  unsigned int end_read = 0;
+  do {
+    assert(end_read < kTestDataSize);
+    const unsigned int mod_offset = (end_read & (kTestDataSize - 1));
+    //Read one character at a time to verify
+    int res = pread(fd, read_buf, 1 , offset + num_read);
+    //something wrong with the file, could not be read 
+    if (res < 0) {
+      return errno;
+    }
+    //is it the right character?
+    if (read_buf[num_read] != *(kTestDataBlock + mod_offset)){
+      return errno;
+    }
+
+    num_read += res;
+    end_read += res;
+  } while (num_read < size);
+
+  return 0;
+}
+
 int WriteDataMmap(int fd, unsigned int offset, unsigned int size) {
   const unsigned int map_size = size + (offset & ((1 << 12) - 1));
   char *filep = (char *) mmap(NULL, size, PROT_WRITE | PROT_READ, MAP_SHARED,
