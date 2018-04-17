@@ -102,19 +102,22 @@ class Generic104: public BaseTestCase {
     
     //some error occured--both links did not persist
     if (filestat.st_nlink != 2){
-       return -2;
+       test_result->SetError(DataTestResult::kFileMetadataCorrupted);
+       test_result->error_description = " : both links did not persist";
     }
     
     //need to add code to count links
     if (remove(foo_ilnk_path.c_str()) < 0 ){
-      return -3;
+       test_result->SetError(DataTestResult::kFileMetadataCorrupted);
+       test_result->error_description = " : link to file could not be removed";
     }
    
     if(remove(bar_link_path.c_str()) < 0 ){
-      return -4;
-     }
-     
-
+       test_result->SetError(DataTestResult::kFileMetadataCorrupted);
+       test_result->error_description = " : link to file could not be removed";
+    }
+    
+    return 0;
   }
 
    private:
@@ -129,7 +132,7 @@ class Generic104: public BaseTestCase {
 }  // namespace fs_testing
 
 extern "C" fs_testing::tests::BaseTestCase *test_case_get_instance() {
-  return new fs_testing::tests::Generic039;
+  return new fs_testing::tests::Generic104;
 }
 
 extern "C" void test_case_delete_instance(fs_testing::tests::BaseTestCase *tc) {
