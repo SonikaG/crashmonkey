@@ -1,12 +1,16 @@
 /*
-Reporducing fstest generic/104
+Reproducing xfstest generic/104
 
-1. Add two files, foo and bar to the same directory
-2. Add hard links for both files
-3. Only fsync bar
-4. Check that the hardlinks exist after crash and that metadata is consistent
+1. Create file A/foo, and A/bar
+2. Sync
+3. Create hard links for file A/foo and A/bar
+4. fsync A/bar
 
+After a crash, foo and bar should have correct link counts and removing them should make the directory removable.
+
+https://patchwork.kernel.org/patch/6852751/
 */
+
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -22,11 +26,11 @@ Reporducing fstest generic/104
 #include "../user_tools/api/workload.h"
 #include "../user_tools/api/actions.h"
 #define TEST_FILE_FOO "foo"
+#define TEST_FILE_FOO_LINK "foo_link_"
 #define TEST_FILE_BAR "bar"
-#define TEST_FILE_FOO_LINK "foo_link"
-#define TEST_FILE_BAR_LINK "bar_link"
-#define TEST_MNT "/mnt/snapshot"
+#define TEST_FILE_BAR_LINK "bar_link_"
 #define TEST_DIR_A "test_dir_a"
+
 
 using fs_testing::tests::DataTestResult;
 using fs_testing::user_tools::api::WriteData;
@@ -42,97 +46,110 @@ namespace tests {
 
 class Generic104: public BaseTestCase {
  public:
-
   virtual int setup() override {
+
+	init_paths();
     // Create test directory A.
-    int res = mkdir(TEST_MNT "/" TEST_DIR_A, 0777);
+        string dir_path = mnt_dir_ + "/" TEST_DIR_A;
+    int res = mkdir(dir_path.c_str(), 0777);
     if (res < 0) {
       return -1;
     }
+
+    //Create file foo in TEST_DIR_A 
+    int fd_foo = open(foo_path.c_str(), O_RDWR | O_CREAT, TEST_FILE_PERMS);
+    if (fd_foo < 0) {
+      return -1;
+    }
+
+    //Create file bar in TEST_DIR_A 
+    int fd_bar = open(bar_path.c_str(), O_RDWR | O_CREAT, TEST_FILE_PERMS);
+    if (fd_bar < 0) {
+      return -1;
+    }
+
+    close(fd_foo);
+    close(fd_bar);
+
     sync();
+
     return 0;
   }
 
   virtual int run() override {
-    
-    //create files foo and bar  
-    const int fd_foo = open(foo_path.c_str(), O_RDWR | O_CREAT, TEST_FILE_PERMS);
-      if (fd_foo < 0) {
-        return -1;
-      }
-  
-    const int fd_bar = open(bar_path.c_str(), O_RDWR | O_CREAT, TEST_FILE_PERMS);
-      if (fd_bar < 0){
-        return -2;
-      }
-  
-    //create a link foo_link to foo
-    if (link(foo_path.c_str(), foo_link_path.c_str()) < 0){
+
+    init_paths();
+
+
+    // Create a new hard link for file foo
+    if(link(foo_path.c_str(), foo_link_path.c_str()) < 0){
+      return -2;
+    }
+
+    // Create a new hard link for file bar
+    if(link(bar_path.c_str(), bar_link_path.c_str()) < 0){
       return -3;
     }
 
-    //crate a link bar_link to bar
-    if (link(bar_path.c_str(), bar_link_path.c_str()) < 0){
-      return -4;
-    }
-
-    //fsync bar only  
-    if(fsync(fd_bar) < 0){
-      close(fd_bar);
-      return -5;
-    }
-
-    //Make a user checkpoint here. Checkpoint must be one beyond this point. 
-    if(Checkpoint() < 0){
-      return -6;
-    }
-
-    //close open files 
-    close(fd_foo);
-    close(fd_bar);
-  }
-
-  virtual int check_test(unsigned int last_checkpoint, 
-    DataTestResult *test_result) override{
-    
-    struct stat filestat;
-    if(stat(TEST_DIR_A, &filestat) == -1){
+    int fd_bar = open(bar_path.c_str(), O_RDWR, TEST_FILE_PERMS);
+    if (fd_bar < 0) {
       return -1;
     }
-    
-    //some error occured--both links did not persist
-    if (filestat.st_nlink != 2){
-       return -2;
-    }
-    
-    //need to add code to count links
-    if (remove(foo_ilnk_path.c_str()) < 0 ){
-      return -3;
-    }
-   
-    if(remove(bar_link_path.c_str()) < 0 ){
-      return -4;
-     }
-     
 
+    if (fsync(fd_bar) < 0){
+      return -4;
+    }
+  
+    // Make a user checkpoint here
+    if (Checkpoint() < 0){
+      return -7;
+    }
+
+    //Close open files  
+    close(fd_bar);
+    
+    return 0;
+  }
+
+  virtual int check_test(unsigned int last_checkpoint,
+      DataTestResult *test_result) override {
+
+	init_paths();
+	string dir = mnt_dir_ + "/" TEST_DIR_A;
+	string rm_cmd = "rm -f " + dir + "/*";
+
+	// Remove files within the directory
+	system(rm_cmd.c_str());
+
+	// Directory should be removeable
+	if (rmdir(dir.c_str()) < 0 && errno == ENOTEMPTY ) {
+        test_result->SetError(DataTestResult::kFileMetadataCorrupted);
+        test_result->error_description = " : Unable to remove directory after deleting files";
+	}
+    return 0;
   }
 
    private:
-    const string foo_path = TEST_MNT "/" TEST_DIR_A "/" TEST_FILE_FOO;
-    const string bar_path = TEST_MNT "/" TEST_DIR_A "/" TEST_FILE_BAR;
-    const string foo_link_path = TEST/MNT "/" TEST_DIR_A "/" TEST_FILE_FOO_LINK;
-    const string bar_link_path = TEST/MNT "/" TEST_DIR_A "/" TEST_FILE_BAR_LINK;
-
+    string foo_path;
+    string foo_link_path;
+    string bar_path;
+    string bar_link_path;
+    
+    void init_paths() {
+        foo_path = mnt_dir_ + "/" TEST_DIR_A "/" TEST_FILE_FOO;
+        foo_link_path = mnt_dir_ + "/" TEST_DIR_A "/" TEST_FILE_FOO_LINK;
+        bar_path = mnt_dir_ + "/" TEST_DIR_A "/" TEST_FILE_BAR;
+        bar_link_path = mnt_dir_ + "/" TEST_DIR_A "/" TEST_FILE_BAR_LINK;
+    }
 };
 
 }  // namespace tests
 }  // namespace fs_testing
 
 extern "C" fs_testing::tests::BaseTestCase *test_case_get_instance() {
-  return new fs_testing::tests::Generic039;
+  return new fs_testing::tests::Generic104;
 }
 
 extern "C" void test_case_delete_instance(fs_testing::tests::BaseTestCase *tc) {
   delete tc;
 }
-

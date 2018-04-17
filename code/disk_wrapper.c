@@ -48,8 +48,10 @@ static struct hwm_device {
   u8* data;
   struct gendisk* gd;
   bool log_on;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) && \
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 12, 0) && \
   LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)) || \
+ (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0) && \
+  LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) || \
   (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) && \
    LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0))
   struct block_device* target_dev;
@@ -315,8 +317,11 @@ static unsigned long long convert_flags(unsigned long long flags) {
   }
 
 // These are flags present in 4.4 but not 3.13.
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) \
-  && LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0) && \
+    LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) || \
+    (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) && \
+     LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0))
+
   if (flags & REQ_PM) {
     res |= HWM_PM_FLAG;
   }
@@ -441,8 +446,10 @@ static void print_rw_flags(unsigned long rw, unsigned long flags) {
 }
 
 // TODO(ashmrtn): Currently not thread safe/reentrant. Make it so.
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) && \
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 12, 0) && \
     LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)) || \
+    (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0) && \
+    LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) || \
     (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) && \
      LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0))
 static void disk_wrapper_bio(struct request_queue* q, struct bio* bio) {
@@ -549,9 +556,11 @@ static blk_qc_t disk_wrapper_bio(struct request_queue* q, struct bio* bio) {
  passthrough:
   // Pass request off to normal device driver.
   hwm = (struct hwm_device*) q->queuedata;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) && \
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 12, 0) && \
     LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)) || \
-  (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) && \
+   (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0) && \
+   LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) || \
+   (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) && \
    LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0))
   bio->bi_bdev = hwm->target_dev;
   submit_bio(bio->BI_RW, bio);
@@ -627,8 +636,10 @@ static int __init disk_wrapper_init(void) {
     goto out;
   }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) && \
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 12, 0) && \
     LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)) || \
+   (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0) && \
+   LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) || \
   (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) && \
    LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0))
   Device.target_dev = target_device;
@@ -652,8 +663,10 @@ static int __init disk_wrapper_init(void) {
     printk(KERN_WARNING "hwm: attempt to wrap device with no request queue\n");
     goto out;
   }
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) && \
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 12, 0) && \
     LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)) || \
+    (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0) && \
+    LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) || \
   (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) && \
    LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0))
   // Field not present in kernel 4.15+.
@@ -686,9 +699,11 @@ static int __init disk_wrapper_init(void) {
   }
   blk_queue_make_request(Device.gd->queue, disk_wrapper_bio);
   // Make this queue have the same flags as the queue we're feeding into.
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) && \
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 12, 0) && \
     LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)) || \
-  (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) && \
+   (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0) && \
+   LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) || \ 
+ (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) && \
    LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0))
   Device.gd->queue->flush_flags = flush_flags;
 #endif
@@ -696,8 +711,10 @@ static int __init disk_wrapper_init(void) {
   Device.gd->queue->queuedata = &Device;
   printk(KERN_INFO "hwm: working with queue with:\n\tflags 0x%lx\n",
       Device.gd->queue->queue_flags);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) && \
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 12, 0) && \
     LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)) || \
+    (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0) && \
+    LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) || \
   (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) && \
    LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0))
   printk(KERN_INFO "hwm: working with queue with:\n\tflush flags 0x%lx\n",
@@ -716,8 +733,10 @@ static int __init disk_wrapper_init(void) {
 
 static void __exit hello_cleanup(void) {
   free_logs();
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) && \
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 12, 0) && \
   LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0)) || \
+  (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0) && \
+   LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) || \
   (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0) && \
    LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0))
   blkdev_put(Device.target_dev, FMODE_READ);

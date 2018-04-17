@@ -1,13 +1,14 @@
 /*
-Reproducing xfstest generic/056
+Reproducing xfstest generic/090
 
 1. Create file foo and write some data and fsync the file
 2. Create a hard link to the file
-3. Create another file bar and fsync it
+3. Sync
+4. Append more data to file foo and fsync it
 
-After a crash, the file foo should persist the contents that was fsynced.
+After a crash, the file foo should contain the appended data.
 
-https://patchwork.kernel.org/patch/5822681/
+https://patchwork.kernel.org/patch/6624481/
 */
 
 
@@ -26,9 +27,7 @@ https://patchwork.kernel.org/patch/5822681/
 #include "../user_tools/api/actions.h"
 #define TEST_FILE_FOO "foo"
 #define TEST_FILE_FOO_BACKUP "foo_backup"
-#define TEST_FILE_BAR "bar"
 #define TEST_FILE_FOO_LINK "foo_link_"
-#define TEST_DIR_A "test_dir_a"
 
 
 using fs_testing::tests::DataTestResult;
@@ -43,36 +42,26 @@ namespace fs_testing {
 namespace tests {
 
 
-class Generic056: public BaseTestCase {
+class Generic090: public BaseTestCase {
  public:
   virtual int setup() override {
 
 	init_paths();
 
-    // Create test directory A.
-	string dir_path = mnt_dir_ + "/" TEST_DIR_A;
-    int res = mkdir(dir_path.c_str(), 0777);
-    if (res < 0) {
-      return -1;
-    }
 
-    //Create file foo in TEST_DIR_A 
-    const int fd_foo = open(foo_path.c_str(), O_RDWR | O_CREAT, TEST_FILE_PERMS);
-    if (fd_foo < 0) {
-      return -1;
-    }
     const int fd_foo_backup = open(foo_backup_path.c_str(), O_RDWR | O_CREAT, TEST_FILE_PERMS);
     if (fd_foo_backup < 0) {
       return -1;
     }
 
-    if (WriteData(fd_foo_backup, 0, 4096) < 0) {
+    // Prepare backup file
+    if (WriteData(fd_foo_backup, 0, 65536) < 0) {
     	return -2;
     }
 
-    sync();
-    close(fd_foo);
     close(fd_foo_backup);
+
+    sync();
 
     return 0;
   }
@@ -81,13 +70,40 @@ class Generic056: public BaseTestCase {
 
 	init_paths();
   
-    const int fd_foo = open(foo_path.c_str(), O_RDWR | O_CREAT, TEST_FILE_PERMS);
+    int fd_foo = open(foo_path.c_str(), O_RDWR | O_CREAT, TEST_FILE_PERMS);
     if (fd_foo < 0) {
       return -1;
     }
 
-    // Write some contents to the file and the backup file
-    if (WriteData(fd_foo, 0, 4096) < 0) {
+    // Write some cotent into file foo
+    if (WriteData(fd_foo, 0, 32768) < 0) {
+    	return -2;
+    }
+
+    //fsync file foo
+    if (fsync(fd_foo) < 0) {
+	return -3;
+    }
+
+    close(fd_foo);
+    sync();
+	
+
+    // Create a new hard link
+    if(link(foo_path.c_str(), foo_link_path.c_str()) < 0){
+      return -5;
+    }
+
+    //Force a commit of current tx
+    sync();
+
+	fd_foo = open(foo_path.c_str(), O_RDWR, TEST_FILE_PERMS);
+    if (fd_foo < 0) {
+      return -1;
+    }
+
+    // Append contents to the file
+    if (WriteData(fd_foo, 32768, 32768) < 0) {
     	return -2;
     }
 
@@ -95,33 +111,13 @@ class Generic056: public BaseTestCase {
 	return -3;
     }
 
-    //After this checkpoint, foo should have the same data as foo_backup.	
-    if (Checkpoint() < 0){
-      return -4;
-    }	
-
-    // Create a new hard link
-    if(link(foo_path.c_str(), foo_link_path.c_str()) < 0){
-      return -5;
-    }
-
-    const int fd_bar = open(bar_path.c_str(), O_RDWR | O_CREAT, TEST_FILE_PERMS);
-    if (fd_bar < 0) {
-      return -1;
-    }
-
-    if (fsync(fd_bar) < 0) {
-    	return -3;
-    }
-
-    // Make a user checkpoint here
+    // Make a user checkpoint here. Beyond this point, contents of foo and foo_backup must match.
     if (Checkpoint() < 0){
       return -4;
     }
 
     //Close open files  
     close(fd_foo);
-    close(fd_bar);
 
     return 0;
   }
@@ -147,6 +143,8 @@ class Generic056: public BaseTestCase {
 	if (expected_md5sum.compare(actual_md5sum) != 0) {
         test_result->SetError(DataTestResult::kFileDataCorrupted);
         test_result->error_description = " : md5sum of foo not maching with foo backup";
+	//system("cp /mnt/snapshot/foo foo.txt");
+	//system("cp /mnt/snapshot/foo_backup foo_back.txt");
 		return 0;
 	}
       }
@@ -158,13 +156,11 @@ class Generic056: public BaseTestCase {
     string foo_path;
     string foo_backup_path;
     string foo_link_path;
-    string bar_path;
     
     void init_paths() {
-        foo_path = mnt_dir_ + "/" TEST_DIR_A "/" TEST_FILE_FOO;
-        foo_backup_path = mnt_dir_ + "/" TEST_DIR_A "/" TEST_FILE_FOO_BACKUP;
-        foo_link_path = mnt_dir_ + "/" TEST_DIR_A "/" TEST_FILE_FOO_LINK;
-        bar_path = mnt_dir_ + "/" TEST_DIR_A "/" TEST_FILE_BAR;
+        foo_path = mnt_dir_ + "/" TEST_FILE_FOO;
+        foo_backup_path = mnt_dir_ + "/" TEST_FILE_FOO_BACKUP;
+        foo_link_path = mnt_dir_ + "/" TEST_FILE_FOO_LINK;
     }
 
     string get_md5sum(string file_name) {
@@ -185,7 +181,7 @@ class Generic056: public BaseTestCase {
 }  // namespace fs_testing
 
 extern "C" fs_testing::tests::BaseTestCase *test_case_get_instance() {
-  return new fs_testing::tests::Generic056;
+  return new fs_testing::tests::Generic090;
 }
 
 extern "C" void test_case_delete_instance(fs_testing::tests::BaseTestCase *tc) {
